@@ -13,6 +13,7 @@ type RouterMode int
 const (
 	ModeTrie RouterMode = iota
 	ModeRegex
+	ModeAhoCorasick
 )
 
 const (

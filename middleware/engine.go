@@ -71,6 +71,8 @@ func (e *Engine) SwitchRouter(mode RouterMode) error {
 		r = NewTrieRouter()
 	case ModeRegex:
 		r = NewRegexRouter()
+	case ModeAhoCorasick:
+		r = NewAhoCorasickRouter()
 	default:
 		return errors.New("unknown router mode")
 	}
