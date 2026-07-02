@@ -16,7 +16,7 @@ A simple and extensible HTTP middleware engine for Go, inspired by the elegant G
 
 Clone this repository and use it in your own Go project:
 ```bash
-git clone https://github.com/davy-yusuke/middleware-go.git
+git clone https://github.com/james-yusuke/middleware-go.git
 ```
 Or simply copy the `middleware/` folder into your project.
 
