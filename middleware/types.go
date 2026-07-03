@@ -58,8 +58,6 @@ type Context struct {
 	handlers []HandlerFunc
 	index    int
 	engine   *Engine
-
-	Keys map[string]interface{}
-
-	cancel context.CancelFunc
+	Keys     map[string]interface{}
+	cancel   context.CancelFunc
 }

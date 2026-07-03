@@ -5,15 +5,16 @@ import (
 )
 
 type acState struct {
-	id         int
-	depth      int
-	segment    string
-	isParam    bool
-	paramName  string
-	children   map[string]*acState
-	paramChild *acState
-	fail       *acState
-	output     map[int][]HandlerFunc
+	id            int
+	depth         int
+	segment       string
+	isParam       bool
+	paramName     string
+	children      map[string]*acState
+	paramChild    *acState
+	wildcardChild *acState
+	fail          *acState
+	output        map[int][]HandlerFunc
 }
 
 type AhoCorasickRouter struct {
@@ -41,7 +42,6 @@ func (acr *AhoCorasickRouter) Use(m HandlerFunc) {
 
 func (acr *AhoCorasickRouter) AddRoute(methodBit int, pattern string, handlers []HandlerFunc) error {
 	acr.compiled = false
-
 	p := strings.Trim(pattern, "/")
 	var segs []string
 	if p == "" {
@@ -49,9 +49,7 @@ func (acr *AhoCorasickRouter) AddRoute(methodBit int, pattern string, handlers [
 	} else {
 		segs = strings.Split(p, "/")
 	}
-
 	current := acr.root
-
 	for _, seg := range segs {
 		if strings.HasPrefix(seg, ":") {
 			if current.paramChild == nil {
@@ -69,7 +67,20 @@ func (acr *AhoCorasickRouter) AddRoute(methodBit int, pattern string, handlers [
 			current = current.paramChild
 			continue
 		}
-
+		if seg == "*" {
+			if current.wildcardChild == nil {
+				acr.stateCount++
+				current.wildcardChild = &acState{
+					id:       acr.stateCount,
+					depth:    current.depth + 1,
+					segment:  seg,
+					children: make(map[string]*acState),
+					output:   make(map[int][]HandlerFunc),
+				}
+			}
+			current = current.wildcardChild
+			break
+		}
 		child, exists := current.children[seg]
 		if !exists {
 			acr.stateCount++
@@ -84,12 +95,10 @@ func (acr *AhoCorasickRouter) AddRoute(methodBit int, pattern string, handlers [
 		}
 		current = child
 	}
-
 	if current.output == nil {
 		current.output = make(map[int][]HandlerFunc)
 	}
 	current.output[methodBit] = handlers
-
 	return nil
 }
 
@@ -97,9 +106,7 @@ func (acr *AhoCorasickRouter) compile() {
 	if acr.compiled {
 		return
 	}
-
 	queue := make([]*acState, 0)
-
 	for _, child := range acr.root.children {
 		child.fail = acr.root
 		queue = append(queue, child)
@@ -108,22 +115,26 @@ func (acr *AhoCorasickRouter) compile() {
 		acr.root.paramChild.fail = acr.root
 		queue = append(queue, acr.root.paramChild)
 	}
-
+	if acr.root.wildcardChild != nil {
+		acr.root.wildcardChild.fail = acr.root
+		queue = append(queue, acr.root.wildcardChild)
+	}
 	for len(queue) > 0 {
 		current := queue[0]
 		queue = queue[1:]
-
 		for key, child := range current.children {
 			child.fail = acr.findFailState(current.fail, key, false)
 			queue = append(queue, child)
 		}
-
 		if current.paramChild != nil {
 			current.paramChild.fail = acr.findFailState(current.fail, "", true)
 			queue = append(queue, current.paramChild)
 		}
+		if current.wildcardChild != nil {
+			current.wildcardChild.fail = acr.root
+			queue = append(queue, current.wildcardChild)
+		}
 	}
-
 	acr.compiled = true
 }
 
@@ -145,7 +156,6 @@ func (acr *AhoCorasickRouter) findFailState(state *acState, seg string, isParam 
 
 func (acr *AhoCorasickRouter) Find(methodBit int, path string) ([]HandlerFunc, map[string]string, bool) {
 	acr.compile()
-
 	p := strings.Trim(path, "/")
 	var segs []string
 	if p == "" {
@@ -153,32 +163,38 @@ func (acr *AhoCorasickRouter) Find(methodBit int, path string) ([]HandlerFunc, m
 	} else {
 		segs = strings.Split(p, "/")
 	}
-
 	params := make(map[string]string)
 	current := acr.root
-
 	for i, seg := range segs {
 		nextState := acr.transition(current, seg, params)
-
 		if nextState == nil {
 			nextState = acr.transitionViaFail(current, seg, params)
 		}
-
 		if nextState == nil {
 			return nil, nil, false
 		}
-
+		if nextState == current.wildcardChild {
+			params["*"] = strings.Join(segs[i:], "/")
+			current = nextState
+			break
+		}
 		current = nextState
-		_ = i
 	}
-
 	if handlers, exists := current.output[methodBit]; exists && len(handlers) > 0 {
 		all := make([]HandlerFunc, 0, len(acr.middlewares)+len(handlers))
 		all = append(all, acr.middlewares...)
 		all = append(all, handlers...)
 		return all, params, true
 	}
-
+	if current.wildcardChild != nil {
+		params["*"] = ""
+		if handlers, exists := current.wildcardChild.output[methodBit]; exists && len(handlers) > 0 {
+			all := make([]HandlerFunc, 0, len(acr.middlewares)+len(handlers))
+			all = append(all, acr.middlewares...)
+			all = append(all, handlers...)
+			return all, params, true
+		}
+	}
 	return nil, nil, false
 }
 
@@ -186,12 +202,13 @@ func (acr *AhoCorasickRouter) transition(state *acState, seg string, params map[
 	if child, exists := state.children[seg]; exists {
 		return child
 	}
-
 	if state.paramChild != nil {
 		params[state.paramChild.paramName] = seg
 		return state.paramChild
 	}
-
+	if state.wildcardChild != nil {
+		return state.wildcardChild
+	}
 	return nil
 }
 
@@ -204,6 +221,9 @@ func (acr *AhoCorasickRouter) transitionViaFail(state *acState, seg string, para
 		if fail.paramChild != nil {
 			params[fail.paramChild.paramName] = seg
 			return fail.paramChild
+		}
+		if fail.wildcardChild != nil {
+			return fail.wildcardChild
 		}
 		fail = fail.fail
 	}

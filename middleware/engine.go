@@ -15,6 +15,9 @@ func (e *Engine) acquireContext(w http.ResponseWriter, r *http.Request) *Context
 	v := e.ctxPool.Get()
 	if v == nil {
 		c := &Context{engine: e}
+		c.W = w
+		c.R = r
+		c.index = -1
 		return c
 	}
 	c := v.(*Context)
@@ -25,6 +28,7 @@ func (e *Engine) acquireContext(w http.ResponseWriter, r *http.Request) *Context
 	c.index = -1
 	c.Keys = nil
 	c.cancel = nil
+	c.engine = e
 	return c
 }
 
@@ -51,14 +55,13 @@ func New() *Engine {
 		},
 	}
 	e.ctxPool.New = func() interface{} {
-		return &Context{engine: e}
+		return &Context{engine: e, index: -1}
 	}
 	return e
 }
 
 func (e *Engine) Use(mw HandlerFunc) {
 	e.globalMW = append(e.globalMW, mw)
-	e.router.Use(mw)
 }
 
 func (e *Engine) SwitchRouter(mode RouterMode) error {
@@ -76,10 +79,6 @@ func (e *Engine) SwitchRouter(mode RouterMode) error {
 	default:
 		return errors.New("unknown router mode")
 	}
-
-	for _, m := range e.globalMW {
-		r.Use(m)
-	}
 	e.router = r
 	e.mode = mode
 	return nil
@@ -96,21 +95,27 @@ func (e *Engine) Handle(method string, pattern string, handlers ...HandlerFunc) 
 func (e *Engine) GET(pattern string, handlers ...HandlerFunc) error {
 	return e.Handle(http.MethodGet, pattern, handlers...)
 }
+
 func (e *Engine) POST(pattern string, handlers ...HandlerFunc) error {
 	return e.Handle(http.MethodPost, pattern, handlers...)
 }
+
 func (e *Engine) PUT(pattern string, handlers ...HandlerFunc) error {
 	return e.Handle(http.MethodPut, pattern, handlers...)
 }
+
 func (e *Engine) DELETE(pattern string, handlers ...HandlerFunc) error {
 	return e.Handle(http.MethodDelete, pattern, handlers...)
 }
+
 func (e *Engine) PATCH(pattern string, handlers ...HandlerFunc) error {
 	return e.Handle(http.MethodPatch, pattern, handlers...)
 }
+
 func (e *Engine) OPTIONS(pattern string, handlers ...HandlerFunc) error {
 	return e.Handle(http.MethodOptions, pattern, handlers...)
 }
+
 func (e *Engine) HEAD(pattern string, handlers ...HandlerFunc) error {
 	return e.Handle(http.MethodHead, pattern, handlers...)
 }
@@ -139,44 +144,37 @@ func (g *RouterGroup) Handle(method string, pattern string, handlers ...HandlerF
 func (g *RouterGroup) GET(pattern string, handlers ...HandlerFunc) error {
 	return g.Handle(http.MethodGet, pattern, handlers...)
 }
+
 func (g *RouterGroup) POST(pattern string, handlers ...HandlerFunc) error {
 	return g.Handle(http.MethodPost, pattern, handlers...)
 }
 
 func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-
 	c := e.acquireContext(w, r)
 	defer func() {
-
 		if c.cancel != nil {
 			c.cancel()
 		}
 		e.releaseContext(c)
 	}()
-
 	methodBit := 0
 	if b, ok := methodToBit[r.Method]; ok {
 		methodBit = b
 	} else {
-
 		c.handlers = append(c.handlers, e.MethodNotAllowed)
 		c.Next()
 		return
 	}
-
 	p := r.URL.Path
 	p = normalizePattern(p)
-
 	handlers, params, found := e.router.Find(methodBit, p)
 	if !found {
 		e.NotFound(c)
 		return
 	}
-
 	allHandlers := make([]HandlerFunc, 0, len(e.globalMW)+len(handlers))
 	allHandlers = append(allHandlers, e.globalMW...)
 	allHandlers = append(allHandlers, handlers...)
-
 	c.handlers = allHandlers
 	c.Params = params
 	c.index = -1
@@ -187,12 +185,10 @@ func normalizePattern(p string) string {
 	if p == "" {
 		return "/"
 	}
-
 	p = path.Clean(p)
 	if !strings.HasPrefix(p, "/") {
 		p = "/" + p
 	}
-
 	return p
 }
 
