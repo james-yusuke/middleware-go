@@ -61,10 +61,6 @@ func main() {
 
 You can now access [http://localhost:8080/ping](http://localhost:8080/ping) and see detailed logs.
 
-## Router theory
-
-See [docs/router_theory.md](docs/router_theory.md).
-
 ## License
 
 MIT License. See [LICENSE](LICENSE) for details.
