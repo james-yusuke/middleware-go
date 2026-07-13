@@ -36,7 +36,7 @@ func TestEngineServeHTTPWithParamsAndJSON(t *testing.T) {
 }
 
 func TestEngineGlobalMiddlewareRunsOnceInEveryRouterMode(t *testing.T) {
-	modes := []RouterMode{ModeTrie, ModeRegex, ModeAhoCorasick}
+	modes := []RouterMode{ModeTrie, ModeRegex, ModeAhoCorasick, ModeVIRID}
 	for _, mode := range modes {
 		t.Run(routerModeName(mode), func(t *testing.T) {
 			e := New()
@@ -252,6 +252,8 @@ func routerModeName(mode RouterMode) string {
 		return "regex"
 	case ModeAhoCorasick:
 		return "aho-corasick"
+	case ModeVIRID:
+		return "virid"
 	default:
 		return "unknown"
 	}

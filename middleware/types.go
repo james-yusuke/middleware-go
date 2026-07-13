@@ -14,6 +14,7 @@ const (
 	ModeTrie RouterMode = iota
 	ModeRegex
 	ModeAhoCorasick
+	ModeVIRID
 )
 
 const (

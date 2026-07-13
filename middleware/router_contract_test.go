@@ -10,6 +10,7 @@ func TestRouterContract(t *testing.T) {
 		{name: "trie", factory: func() Router { return NewTrieRouter() }},
 		{name: "regex", factory: func() Router { return NewRegexRouter() }},
 		{name: "aho-corasick", factory: func() Router { return NewAhoCorasickRouter() }},
+		{name: "virid", factory: func() Router { return NewVIRIDRouter() }},
 	}
 
 	for _, tt := range tests {
