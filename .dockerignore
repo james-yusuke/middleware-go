@@ -1,0 +1,11 @@
+.git
+.gitignore
+.env
+.idea
+.vscode
+artifacts
+*.out
+*.test
+coverage.*
+go.work
+go.work.sum

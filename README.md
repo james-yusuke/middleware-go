@@ -11,6 +11,83 @@ A simple and extensible HTTP middleware engine for Go, inspired by the elegant G
 - No third-party dependencies
 - Experimental VIRID (Vanishing-Ideal Route Identification and Decoding) router
 
+## Reproducible router benchmark lab
+
+The repository also acts as a version-pinned comparison lab for Go HTTP
+routers. Third-party dependencies live in the nested `benchmarks` module, so
+the middleware library itself remains dependency-free.
+
+The current adapters cover:
+
+- Go `net/http.ServeMux`
+- middleware-go Trie, Regex, Aho-Corasick, and the separate VIRID research suite
+- `httprouter`
+- Chi
+- Gin
+- Echo
+- Fiber
+
+Build the common Go toolchain image once, then invoke a single Compose service
+at a time. Running benchmark services concurrently would introduce scheduler
+and cache interference.
+
+```bash
+docker compose build
+docker compose run --rm test
+docker compose run --rm race
+docker compose run --rm benchmark-smoke
+```
+
+The main benchmark services are:
+
+```bash
+# Public direct-lookup APIs, with hit/mixed/miss workloads.
+docker compose run --rm benchmark-pure
+
+# Complete net/http dispatch paths.
+docker compose run --rm benchmark-native
+
+# Concurrent lookup and dispatch.
+GOMAXPROCS=4 BENCH_CPUS=4 docker compose run --rm benchmark-parallel
+
+# Construction and insertion throughput.
+docker compose run --rm benchmark-build
+
+# VIRID's compiled, delta-generation, and exact-fallback modes.
+docker compose run --rm benchmark-virid
+```
+
+Route counts, duration, sample count, and router selection are configurable:
+
+```bash
+ROUTER_BENCH_SIZES=100,1000,10000 \
+BENCHTIME=2s BENCHCOUNT=5 \
+docker compose run --rm benchmark-pure
+
+# The same service can exercise the 100k and 1M research points.
+ROUTER_SCALE_SIZES=100000,1000000 \
+BENCHTIME=500ms BENCHCOUNT=3 \
+docker compose run --rm benchmark-scale
+```
+
+CPU and heap profiles are written to `artifacts/cpu.out` and
+`artifacts/mem.out`; the matching symbolized binary is
+`artifacts/benchmarks.test`:
+
+```bash
+ROUTER_PROFILE_ROUTER=project-trie ROUTER_PROFILE_SIZE=10000 \
+docker compose run --rm benchmark-profile
+
+docker compose run --rm benchmark-profile \
+  pprof -top /workspace/artifacts/benchmarks.test \
+  /workspace/artifacts/cpu.out
+```
+
+Pure lookup, native `net/http` dispatch, and Fiber's `App.Test` bridge are kept
+in distinct result groups because their execution boundaries are not
+equivalent. See [`benchmarks/README.md`](benchmarks/README.md) for the corpus,
+fairness rules, environment variables, and adapter extension guide.
+
 ## Getting Started
 
 ### Installation

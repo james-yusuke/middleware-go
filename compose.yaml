@@ -1,0 +1,171 @@
+x-lab-environment: &lab-environment
+  GOTOOLCHAIN: local
+  GOMAXPROCS: ${GOMAXPROCS:-1}
+  BENCHTIME: ${BENCHTIME:-1s}
+  BENCHCOUNT: ${BENCHCOUNT:-3}
+
+x-lab: &lab
+  build:
+    context: .
+    target: lab
+    args:
+      GO_VERSION: ${GO_VERSION:-1.25.3}
+  image: middleware-go-router-lab:${GO_VERSION:-1.25.3}
+  working_dir: /workspace
+  init: true
+  network_mode: none
+  cpus: ${BENCH_CPUS:-1.0}
+  volumes:
+    - .:/workspace:ro
+    - ./artifacts:/workspace/artifacts
+    - router-go-build-cache:/root/.cache/go-build
+  environment: *lab-environment
+
+services:
+  test:
+    <<: *lab
+    command:
+      - sh
+      - -ec
+      - |
+        go test ./...
+        cd benchmarks
+        go test ./...
+
+  race:
+    <<: *lab
+    command:
+      - sh
+      - -ec
+      - |
+        go test -race ./...
+        cd benchmarks
+        go test -race ./...
+
+  benchmark-smoke:
+    <<: *lab
+    environment:
+      <<: *lab-environment
+      ROUTER_BENCH_SIZES: "100"
+      ROUTER_NATIVE_SIZES: "100"
+      ROUTER_PARALLEL_SIZES: "100"
+      ROUTER_FIBER_SIZES: "10"
+      ROUTER_BUILD_SIZES: "100"
+    command:
+      - sh
+      - -ec
+      - |
+        go test -run '^$' -bench . -benchmem -benchtime=10x -count=1 ./middleware
+        cd benchmarks
+        go test -run '^$' -bench . -benchmem -benchtime=10x -count=1 ./...
+
+  benchmark-pure:
+    <<: *lab
+    environment:
+      <<: *lab-environment
+      ROUTER_BENCH_SIZES: ${ROUTER_BENCH_SIZES:-100,1000,10000}
+      ROUTER_BENCH_ROUTERS: ${ROUTER_BENCH_ROUTERS:-}
+    command:
+      - sh
+      - -ec
+      - >-
+        cd benchmarks;
+        go test -run '^$' -bench '^BenchmarkPureLookup$' -benchmem
+        -benchtime="$${BENCHTIME}" -count="$${BENCHCOUNT}" ./...
+
+  benchmark-parallel:
+    <<: *lab
+    environment:
+      <<: *lab-environment
+      ROUTER_PARALLEL_SIZES: ${ROUTER_PARALLEL_SIZES:-1000}
+      ROUTER_BENCH_ROUTERS: ${ROUTER_BENCH_ROUTERS:-}
+    command:
+      - sh
+      - -ec
+      - >-
+        cd benchmarks;
+        go test -run '^$' -bench 'Parallel$' -benchmem
+        -benchtime="$${BENCHTIME}" -count="$${BENCHCOUNT}" ./...
+
+  benchmark-native:
+    <<: *lab
+    environment:
+      <<: *lab-environment
+      ROUTER_NATIVE_SIZES: ${ROUTER_NATIVE_SIZES:-100,1000}
+    command:
+      - sh
+      - -ec
+      - >-
+        cd benchmarks;
+        go test -run '^$' -bench '^BenchmarkNativeHTTPDispatch$' -benchmem
+        -benchtime="$${BENCHTIME}" -count="$${BENCHCOUNT}" ./...
+
+  benchmark-fiber:
+    <<: *lab
+    environment:
+      <<: *lab-environment
+      ROUTER_FIBER_SIZES: ${ROUTER_FIBER_SIZES:-100}
+    command:
+      - sh
+      - -ec
+      - >-
+        cd benchmarks;
+        go test -run '^$' -bench '^BenchmarkFiberProtocolBridge$' -benchmem
+        -benchtime="$${BENCHTIME}" -count="$${BENCHCOUNT}" ./...
+
+  benchmark-build:
+    <<: *lab
+    environment:
+      <<: *lab-environment
+      ROUTER_BUILD_SIZES: ${ROUTER_BUILD_SIZES:-100,1000}
+      ROUTER_BENCH_ROUTERS: ${ROUTER_BENCH_ROUTERS:-}
+    command:
+      - sh
+      - -ec
+      - >-
+        cd benchmarks;
+        go test -run '^$' -bench '^BenchmarkBuildRoutes$' -benchmem
+        -benchtime="$${BENCHTIME}" -count="$${BENCHCOUNT}" ./...
+
+  benchmark-virid:
+    <<: *lab
+    command:
+      - sh
+      - -ec
+      - >-
+        go test -run '^$' -bench VIRID -benchmem
+        -benchtime="$${BENCHTIME}" -count="$${BENCHCOUNT}" ./middleware
+
+  benchmark-scale:
+    <<: *lab
+    environment:
+      <<: *lab-environment
+      ROUTER_BENCH_SIZES: ${ROUTER_SCALE_SIZES:-10000,100000}
+      ROUTER_BENCH_ROUTERS: ${ROUTER_SCALE_ROUTERS:-project-trie,project-aho-corasick,httprouter,chi,echo}
+    command:
+      - sh
+      - -ec
+      - >-
+        cd benchmarks;
+        go test -run '^$' -bench '^BenchmarkPureLookup$' -benchmem
+        -benchtime="$${BENCHTIME}" -count="$${BENCHCOUNT}" ./...
+
+  benchmark-profile:
+    <<: *lab
+    environment:
+      <<: *lab-environment
+      ROUTER_BENCH_SIZES: ${ROUTER_PROFILE_SIZE:-10000}
+      ROUTER_BENCH_ROUTERS: ${ROUTER_PROFILE_ROUTER:-project-trie}
+    command:
+      - sh
+      - -ec
+      - >-
+        cd benchmarks;
+        go test -run '^$' -bench '^BenchmarkPureLookup$' -benchmem
+        -benchtime="$${BENCHTIME}" -count=1
+        -cpuprofile=/workspace/artifacts/cpu.out
+        -memprofile=/workspace/artifacts/mem.out
+        -o=/workspace/artifacts/benchmarks.test .
+
+volumes:
+  router-go-build-cache:
